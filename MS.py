@@ -1,5 +1,6 @@
 import pyms
 from csv import writer
+from random import shuffle
 
 class MSGame():    
     def __init__(self):
@@ -24,7 +25,9 @@ class MSGame():
             self.reward_list.append(post_moves - pre_moves)       
 
     def actions(self):
-        return self.board.get_moves()  
+        actions = self.board.get_moves()
+        shuffle(actions)
+        return actions
 
     def undo_move(self, action):
         self.board.undo_move(action)

@@ -17,9 +17,9 @@ from sklearn.model_selection import train_test_split
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-m', '--root_path', help = "root dir", type = str, default = "./ms/")
-parser.add_argument('-f', '--model_file', type = str, help = "path to value network", default = "./ms/model.ckpt")
-parser.add_argument('-n', '--train_results', type = str, help = "train log file name", default = "./ms/resTrain.txt")
-parser.add_argument('-t', '--eval_results', type = str, help = "eval log file name", default = "./ms/resEval.txt")
+parser.add_argument('-f', '--model_file', type = str, help = "path to value network", default = "ms/model.ckpt")
+parser.add_argument('-n', '--train_results', type = str, help = "train log file name", default = "ms/resTrain.txt")
+parser.add_argument('-t', '--eval_results', type = str, help = "eval log file name", default = "ms/resEval.txt")
 parser.add_argument('-e', '--episodes', type = int, help = "number of episodes to play", default = 2000)
 parser.add_argument('-b', '--batch_size', type = int, help = "batch size", default = 64)
 parser.add_argument('-x', '--mx_epochs', type = int, help = "Max epochs to play", default = 50)
@@ -27,21 +27,20 @@ parser.add_argument('-w', '--num_workers', type = int, help = "number of workers
 parser.add_argument('-a', '--replay_size', type = int, help = "replay memeory size", default = 50000)
 parser.add_argument('-s', '--test_size', type = float, help = "test size per cent", default = 0.25)
 parser.add_argument('-k', '--sample_train', type = int, help = "replay sample size to train on", default = 20000)
-parser.add_argument('-l', '--batch_iterations', type = int, help = "batch size for the playout", default = 20)
-parser.add_argument('-o', '--optimizer', type = str, help = "optimizer", default = "adam")
+parser.add_argument('-l', '--batch_iterations', type = int, help = "batch size for the playout", default = 2)
+parser.add_argument('-o', '--optimizer', type = str, help = "optimizer", default = "sgd")
 parser.add_argument('-c', '--loss', type = str, help = "loss", default = "mse")
 parser.add_argument('-g', '--lr', type = float, help = "learnig rate", default = 0.0001)
 parser.add_argument('-v', '--print_every', type = int, help = "freq of  printing the logs", default = 20)
 
 args = parser.parse_args()
-
-
+np.random.seed(18)
 GLOBAL_SCORE_TRAIN = 0
 GLOBAL_SCORE_TEST = 0
 TRAIN = deque([], maxlen = args.replay_size)
-EPS_START = 0.97
-EPS_END = 0.03
-EPS_DECAY = 5000
+EPS_START = 0.98
+EPS_END = 0.02
+EPS_DECAY = 1000
 steps_done = 0
 
 
@@ -51,17 +50,14 @@ model = Model(MSNet(),
               args.loss,
               args.model_file,
               args.batch_size,
-              args.lr,
-              29,
-              0
+              args.lr
               )
-
 
 def explore():
     global steps_done
+    steps_done+=2
     eps_threshold = EPS_END+(EPS_START-EPS_END)*math.exp(-1.*steps_done/EPS_DECAY)
-    steps_done+=1
-    if random.random() > eps_threshold:return False
+    if np.random.rand() > eps_threshold:return False
     return  True
 
 def do_undo_move(state, action):
@@ -86,7 +82,6 @@ def look_ahead(state):
 
 def value(state, eval = False):
     global steps_done
-    steps_done+=1
     if eval : return look_ahead(state)
     actions = state.actions()
     if explore():
@@ -118,27 +113,25 @@ def train_model():
 def log_summaries(state, log_path, eval):
     global GLOBAL_SCORE_TRAIN
     global GLOBAL_SCORE_TEST
-    if eval :
-        if state.reward() > GLOBAL_SCORE_TRAIN:
-            GLOBAL_SCORE_TRAIN= state.reward()
+    if not eval :
+        if state.reward() >= GLOBAL_SCORE_TRAIN:
+            GLOBAL_SCORE_TRAIN = state.reward()
             state.write_results(log_path)
     else:
-        if state.reward() > GLOBAL_SCORE_TEST:
+        if state.reward() >= GLOBAL_SCORE_TEST:
             GLOBAL_SCORE_TEST = state.reward()
             state.write_results(log_path)
 
-def label_states(state, log_path, eval = True):
+def label_states(state, log_path, eval = False):
     global TRAIN
-    total_reward = state.reward()
-    step_reward = 1.0
     assert(len(state.data) == len(state.reward_list))
-    for d, r in zip(state.data, state.reward_list):
+    for d, step_reward in zip(state.data, state.reward_list):
         if len(TRAIN) > args.replay_size:TRAIN.popleft()
-        TRAIN.append([torch.tensor(d).view(1, 1, 30, 30), (step_reward+total_reward+r)/121.0])
+        TRAIN.append([torch.tensor(d).view(1, 1, 30, 30), (state.reward() + step_reward)/121.0])
     log_summaries(state, log_path, eval)
 
 def ms_batch_playout():
-    print(f"Playing ...")
+    #print(f"Playing ...")
     for _ in range(args.batch_iterations):
         state = game()
         while state.available_moves():
@@ -147,22 +140,21 @@ def ms_batch_playout():
         assert(len(state.reward_list) == len(state.data) ==  len(state.episode_moves))
         label_states(state, args.train_results)
 
-
 def evaluate():
-    print(f"Evaluating ...")
+    #print(f"Evaluating ...")
     for _ in range(args.batch_iterations):
         state = game()
         while state.available_moves():
             best_action = value(state, True)
             state.make_move(best_action, True)
-        label_states(state, args.eval_results, False)
+        label_states(state, args.eval_results, True)
         assert(len(state.reward_list) == len(state.data) ==  len(state.episode_moves))
     
 if __name__ == "__main__":
     if not path.exists(args.root_path):os.mkdir(args.root_path)
-    for iteration in range(args.episodes):
+    for batch_episode in range(args.episodes):
         ms_batch_playout()
         train_model()
         evaluate()
-        if iteration%args.print_every == 0 :print(f"steps {steps_done}, global test {GLOBAL_SCORE_TEST} train {GLOBAL_SCORE_TRAIN}")
+        print(f"episode: {batch_episode+1} | steps {steps_done} | test_score {GLOBAL_SCORE_TEST} | train_score {GLOBAL_SCORE_TRAIN}")
     print(f"Done! ...")
