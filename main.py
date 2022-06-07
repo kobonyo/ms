@@ -26,22 +26,23 @@ parser.add_argument('-x', '--mx_epochs', type = int, help = "Max epochs to play"
 parser.add_argument('-w', '--num_workers', type = int, help = "number of workers", default = 8)
 parser.add_argument('-a', '--replay_size', type = int, help = "replay memeory size", default = 50000)
 parser.add_argument('-s', '--test_size', type = float, help = "test size per cent", default = 0.25)
-parser.add_argument('-k', '--sample_train', type = int, help = "replay sample size to train on", default = 10000)
+parser.add_argument('-k', '--sample_train', type = int, help = "replay sample size to train on", default = 20000)
 parser.add_argument('-l', '--batch_iterations', type = int, help = "batch size for the playout", default = 20)
 parser.add_argument('-o', '--optimizer', type = str, help = "optimizer", default = "adam")
 parser.add_argument('-c', '--loss', type = str, help = "loss", default = "mse")
 parser.add_argument('-g', '--lr', type = float, help = "learnig rate", default = 0.0001)
-parser.add_argument('-v', '--print_every', type = int, help = "freq of  printing the logs", default = 6)
-parser.add_argument('-p', '--pos_reshape', type = int, help = "positive threshold", default = 60)
-parser.add_argument('-d', '--past_states', type = int, help = "past state to look at", default = 6)
+parser.add_argument('-v', '--print_every', type = int, help = "freq of  printing the logs", default = 20)
 
 args = parser.parse_args()
 
 
-GLOBAL_SCORE = 0
+GLOBAL_SCORE_TRAIN = 0
+GLOBAL_SCORE_TEST = 0
 TRAIN = deque([], maxlen = args.replay_size)
-PAST_STATES =  deque([], maxlen = args.past_states)
-EPS = 0.01
+EPS_START = 0.97
+EPS_END = 0.03
+EPS_DECAY = 5000
+steps_done = 0
 
 
 model = Model(MSNet(), 
@@ -55,11 +56,13 @@ model = Model(MSNet(),
               0
               )
 
-def e_greedy():
-    global EPS
-    p = np.random.random()
-    if p < EPS: return True
-    return False
+
+def explore():
+    global steps_done
+    eps_threshold = EPS_END+(EPS_START-EPS_END)*math.exp(-1.*steps_done/EPS_DECAY)
+    steps_done+=1
+    if random.random() > eps_threshold:return False
+    return  True
 
 def do_undo_move(state, action):
     state.make_move(action)
@@ -68,8 +71,8 @@ def do_undo_move(state, action):
     return state_data
 
 def look_ahead(state):
-    action_value, action_data  = [] , []
     actions  = state.actions()
+    action_value, action_data  = [] , []
     for a in state.actions():
         state_data = do_undo_move(state, a)
         input_tensor = torch.tensor(state_data).view(1, 1, 30, 30)
@@ -79,13 +82,14 @@ def look_ahead(state):
     action_ix = torch.argmax(action_value).item()
     state.data.append(action_data[action_ix])
     assert(len(actions) == len(state.actions()))
-    print(action_value)
     return actions[action_ix]
 
 def value(state, eval = False):
-    actions = state.actions()
+    global steps_done
+    steps_done+=1
     if eval : return look_ahead(state)
-    if e_greedy():
+    actions = state.actions()
+    if explore():
         action = random.choice(state.actions())  
         state.data.append(do_undo_move(state, action))
         assert(len(actions) == len(state.actions()))
@@ -111,14 +115,19 @@ def train_model():
     valid_loader = DataLoader(CustomDataset(X_test, y_test), batch_size = args.batch_size, num_workers = args.num_workers)
     model.trainer(train_loader, valid_loader)  
 
-def log_summaries(state, log_path):
-    global GLOBAL_SCORE
-    if state.reward() > GLOBAL_SCORE:
-        GLOBAL_SCORE = state.reward()
-        print(f"current score {state.reward()}, global score {GLOBAL_SCORE}")
-        state.write_results(log_path)
+def log_summaries(state, log_path, eval):
+    global GLOBAL_SCORE_TRAIN
+    global GLOBAL_SCORE_TEST
+    if eval :
+        if state.reward() > GLOBAL_SCORE_TRAIN:
+            GLOBAL_SCORE_TRAIN= state.reward()
+            state.write_results(log_path)
+    else:
+        if state.reward() > GLOBAL_SCORE_TEST:
+            GLOBAL_SCORE_TEST = state.reward()
+            state.write_results(log_path)
 
-def label_states(state, log_path):
+def label_states(state, log_path, eval = True):
     global TRAIN
     total_reward = state.reward()
     step_reward = 1.0
@@ -126,7 +135,7 @@ def label_states(state, log_path):
     for d, r in zip(state.data, state.reward_list):
         if len(TRAIN) > args.replay_size:TRAIN.popleft()
         TRAIN.append([torch.tensor(d).view(1, 1, 30, 30), (step_reward+total_reward+r)/121.0])
-    log_summaries(state, log_path)
+    log_summaries(state, log_path, eval)
 
 def ms_batch_playout():
     print(f"Playing ...")
@@ -138,6 +147,7 @@ def ms_batch_playout():
         assert(len(state.reward_list) == len(state.data) ==  len(state.episode_moves))
         label_states(state, args.train_results)
 
+
 def evaluate():
     print(f"Evaluating ...")
     for _ in range(args.batch_iterations):
@@ -145,7 +155,7 @@ def evaluate():
         while state.available_moves():
             best_action = value(state, True)
             state.make_move(best_action, True)
-        label_states(state, args.eval_results)
+        label_states(state, args.eval_results, False)
         assert(len(state.reward_list) == len(state.data) ==  len(state.episode_moves))
     
 if __name__ == "__main__":
@@ -154,4 +164,5 @@ if __name__ == "__main__":
         ms_batch_playout()
         train_model()
         evaluate()
+        if iteration%args.print_every == 0 :print(f"steps {steps_done}, global test {GLOBAL_SCORE_TEST} train {GLOBAL_SCORE_TRAIN}")
     print(f"Done! ...")
