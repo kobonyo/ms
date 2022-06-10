@@ -15,26 +15,28 @@ from TrainModel import Model
 from sklearn.model_selection import train_test_split
 
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument('-m', '--root_path', help = "root dir", type = str, default = "./ms/")
 parser.add_argument('-f', '--model_file', type = str, help = "path to value network", default = "ms/model.ckpt")
 parser.add_argument('-n', '--train_results', type = str, help = "train log file name", default = "ms/resTrain.txt")
 parser.add_argument('-t', '--eval_results', type = str, help = "eval log file name", default = "ms/resEval.txt")
-parser.add_argument('-e', '--episodes', type = int, help = "number of episodes to play", default = 2000)
+parser.add_argument('-e', '--episodes', type = int, help = "number of episodes to play", default = 100)
 parser.add_argument('-b', '--batch_size', type = int, help = "batch size", default = 64)
 parser.add_argument('-x', '--mx_epochs', type = int, help = "Max epochs to play", default = 50)
 parser.add_argument('-w', '--num_workers', type = int, help = "number of workers", default = 8)
 parser.add_argument('-a', '--replay_size', type = int, help = "replay memeory size", default = 50000)
 parser.add_argument('-s', '--test_size', type = float, help = "test size per cent", default = 0.25)
 parser.add_argument('-k', '--sample_train', type = int, help = "replay sample size to train on", default = 20000)
-parser.add_argument('-l', '--batch_iterations', type = int, help = "batch size for the playout", default = 2)
-parser.add_argument('-o', '--optimizer', type = str, help = "optimizer", default = "sgd")
+parser.add_argument('-l', '--batch_iterations', type = int, help = "batch size for the playout", default = 10)
+parser.add_argument('-o', '--optimizer', type = str, help = "optimizer", default = "")
 parser.add_argument('-c', '--loss', type = str, help = "loss", default = "mse")
-parser.add_argument('-g', '--lr', type = float, help = "learnig rate", default = 0.0001)
+parser.add_argument('-g', '--lr', type = float, help = "learnig rate", default = 0.001)
 parser.add_argument('-v', '--print_every', type = int, help = "freq of  printing the logs", default = 20)
 
 args = parser.parse_args()
-np.random.seed(18)
+TRAIN_SEED = 1
+np.random.seed(TRAIN_SEED)
 GLOBAL_SCORE_TRAIN = 0
 GLOBAL_SCORE_TEST = 0
 TRAIN = deque([], maxlen = args.replay_size)
@@ -50,12 +52,16 @@ model = Model(MSNet(),
               args.loss,
               args.model_file,
               args.batch_size,
-              args.lr
+              args.lr,
+              args.episodes
               )
+
+def update_steps():
+    global steps_done
+    steps_done+=1
 
 def explore():
     global steps_done
-    steps_done+=2
     eps_threshold = EPS_END+(EPS_START-EPS_END)*math.exp(-1.*steps_done/EPS_DECAY)
     if np.random.rand() > eps_threshold:return False
     return  True
@@ -67,6 +73,7 @@ def do_undo_move(state, action):
     return state_data
 
 def look_ahead(state):
+    global steps_done
     actions  = state.actions()
     action_value, action_data  = [] , []
     for a in state.actions():
@@ -82,6 +89,7 @@ def look_ahead(state):
 
 def value(state, eval = False):
     global steps_done
+    update_steps()
     if eval : return look_ahead(state)
     actions = state.actions()
     if explore():
@@ -105,7 +113,7 @@ def sample_replay(data, sz):
 
 def train_model():
     X , y = sample_replay(TRAIN, args.sample_train)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = TRAIN_SEED)
     train_loader = DataLoader(CustomDataset(X_train, y_train), batch_size = args.batch_size, num_workers = args.num_workers)
     valid_loader = DataLoader(CustomDataset(X_test, y_test), batch_size = args.batch_size, num_workers = args.num_workers)
     model.trainer(train_loader, valid_loader)  
@@ -130,9 +138,9 @@ def label_states(state, log_path, eval = False):
         TRAIN.append([torch.tensor(d).view(1, 1, 30, 30), (state.reward() + step_reward)/121.0])
     log_summaries(state, log_path, eval)
 
+
 def ms_batch_playout():
-    #print(f"Playing ...")
-    for _ in range(args.batch_iterations):
+    for batch_iter in range(args.batch_iterations):
         state = game()
         while state.available_moves():
             best_action = value(state)
@@ -141,7 +149,6 @@ def ms_batch_playout():
         label_states(state, args.train_results)
 
 def evaluate():
-    #print(f"Evaluating ...")
     for _ in range(args.batch_iterations):
         state = game()
         while state.available_moves():
@@ -156,5 +163,5 @@ if __name__ == "__main__":
         ms_batch_playout()
         train_model()
         evaluate()
-        print(f"episode: {batch_episode+1} | steps {steps_done} | test_score {GLOBAL_SCORE_TEST} | train_score {GLOBAL_SCORE_TRAIN}")
+        print(f"episode: {batch_episode+1}/{args.episodes} | total steps {steps_done} | test_score {GLOBAL_SCORE_TEST} | train_score {GLOBAL_SCORE_TRAIN}")
     print(f"Done! ...")

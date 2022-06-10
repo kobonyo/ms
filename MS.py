@@ -1,7 +1,7 @@
 import pyms
 from csv import writer
 from random import shuffle
-
+pyms.my_srand(1)
 class MSGame():    
     def __init__(self):
         self.board = pyms.Board()
@@ -13,7 +13,7 @@ class MSGame():
         return self.board.get_site_states()
 
     def available_moves(self):
-        if len(self.actions())>0:return True
+        if len(self.actions()) > 0 : return True
         return False
 
     def make_move(self, move, reward = False):
@@ -25,10 +25,12 @@ class MSGame():
             self.reward_list.append(post_moves - pre_moves)       
 
     def actions(self):
-        actions = self.board.get_moves()
-        shuffle(actions)
-        return actions
+        return self.board.get_moves()
 
+    def print_moves(self):
+        print(len(self.board.get_moves()))
+        print(self.board.get_moves())
+    
     def undo_move(self, action):
         self.board.undo_move(action)
     

@@ -13,6 +13,10 @@ void print_states(py::list &_l) {
   printf("\n");    
 }
 
+void my_srand(int _s) {
+  srand(_s);
+}
+
 struct pyms_board_t : ms_board_t {
   pyms_board_t(): ms_board_t() {}
   py::list get_initial_states() {
@@ -25,6 +29,20 @@ struct pyms_board_t : ms_board_t {
 	  _l.append(0);
       }
     return _l;
+  }
+  pyms_board_t copy_board() {
+    pyms_board_t new_board;
+    for(int i = 0; i < BOARD_SIZE; i++) 
+      for(int j = 0; j < BOARD_SIZE; j++) {
+        new_board.board[i][j] = board[i][j];
+      }
+    for(auto ii : L) {
+      pos_t new_pos;
+      new_pos.set(ii.x, ii.y);
+      new_board.L.push_back(new_pos);
+    }
+    new_board.nb_moves = nb_moves;
+    return new_board;
   }
   py::list get_site_states() {
     py::list _l;
@@ -105,10 +123,12 @@ PYBIND11_MODULE(pyms, m) {
   m.attr("MS_SIZE") = MS_SIZE;
   m.attr("BOARD_SIZE") = BOARD_SIZE;
   m.def("print_states", &print_states);
+  m.def("my_srand", &my_srand);
        
   py::class_<pyms_board_t>(m, "Board")
     .def(py::init())
     .def("get_initial_states", &pyms_board_t::get_initial_states)
+    .def("copy_board", &pyms_board_t::copy_board)
     .def("get_site_states", &pyms_board_t::get_site_states)
     .def("get_moves", &pyms_board_t::get_moves)
     .def("do_move", &pyms_board_t::do_move)
