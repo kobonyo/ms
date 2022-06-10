@@ -29,7 +29,7 @@ parser.add_argument('-a', '--replay_size', type = int, help = "replay memeory si
 parser.add_argument('-s', '--test_size', type = float, help = "test size per cent", default = 0.25)
 parser.add_argument('-k', '--sample_train', type = int, help = "replay sample size to train on", default = 20000)
 parser.add_argument('-l', '--batch_iterations', type = int, help = "batch size for the playout", default = 10)
-parser.add_argument('-o', '--optimizer', type = str, help = "optimizer", default = "")
+parser.add_argument('-o', '--optimizer', type = str, help = "optimizer", default = "adam")
 parser.add_argument('-c', '--loss', type = str, help = "loss", default = "mse")
 parser.add_argument('-g', '--lr', type = float, help = "learnig rate", default = 0.001)
 parser.add_argument('-v', '--print_every', type = int, help = "freq of  printing the logs", default = 20)
