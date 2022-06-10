@@ -21,7 +21,7 @@ parser.add_argument('-m', '--root_path', help = "root dir", type = str, default 
 parser.add_argument('-f', '--model_file', type = str, help = "path to value network", default = "ms/model.ckpt")
 parser.add_argument('-n', '--train_results', type = str, help = "train log file name", default = "ms/resTrain.txt")
 parser.add_argument('-t', '--eval_results', type = str, help = "eval log file name", default = "ms/resEval.txt")
-parser.add_argument('-e', '--episodes', type = int, help = "number of episodes to play", default = 100)
+parser.add_argument('-e', '--episodes', type = int, help = "number of episodes to play", default = 1000)
 parser.add_argument('-b', '--batch_size', type = int, help = "batch size", default = 64)
 parser.add_argument('-x', '--mx_epochs', type = int, help = "Max epochs to play", default = 50)
 parser.add_argument('-w', '--num_workers', type = int, help = "number of workers", default = 8)
